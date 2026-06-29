@@ -74,7 +74,7 @@ def run_single(table, parms):
 
         # 阶段 1：逐步减小 initsma（pa=0）
         fitted = False
-        for frac in [2, 3, 4, 5]:
+        for frac in [2, 3, 4]:
             initsma = get_initsma(sma_27 / frac)
             iso_table = try_fit(initsma, pa_candidates[0])
             if iso_table is not None:
