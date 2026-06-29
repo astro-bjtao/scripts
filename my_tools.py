@@ -7,7 +7,9 @@ my_tools.py — 通用天文图像处理与可视化工具集
 import os
 import math
 import shutil
+import time
 import numpy as np
+from multiprocessing import Process
 from astropy.io import fits
 from astropy.wcs import WCS
 from regions import Regions
@@ -36,6 +38,44 @@ def check_dir(path, clean=False):
         if clean:
             shutil.rmtree(path)
             os.makedirs(path)
+
+def run_multi(run_single, path_table, parms, ncpu=120):
+    """
+    通用多进程调度器：拆分星表 → 分配进程 → 等待合并。
+
+    Parameters
+    ----------
+    run_single : callable
+        单进程处理函数，签名为 run_single(table, parms)。
+    path_table : str
+        主星表 FITS 文件路径。
+    parms : dict
+        传递给 run_single 的参数字典。
+    ncpu : int
+        并行进程数，默认 120。
+    """
+    from astropy.table import Table
+    tab = Table.read(path_table)
+
+    n_total = len(tab)
+    indices = np.linspace(0, n_total, ncpu + 1, dtype=int)
+    process_list = []
+    for j in range(ncpu):
+        start = indices[j]
+        end = indices[j + 1]
+        if start == end:
+            continue
+        sub_tab = tab[start:end]
+        process_list.append(
+            Process(target=run_single, args=(sub_tab, parms))
+        )
+
+    for p in process_list:
+        p.start()
+        time.sleep(0.01)
+
+    for p in process_list:
+        p.join()
 
 # ============================================================
 #  图像几何操作

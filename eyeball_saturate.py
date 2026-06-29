@@ -12,14 +12,12 @@
 from astropy.table import Table
 from astropy.io import fits
 import numpy as np
-from multiprocessing import Process
-import time
 import os
 
 # 路径配置
 from config import *
 # 通用工具
-from my_tools import check_dir, plot_eyeball_saturate
+from my_tools import check_dir, plot_eyeball_saturate, run_multi
 
 
 def run_single(table, parms):
@@ -59,33 +57,6 @@ def run_single(table, parms):
         )
 
 
-def run_multi(path_table, parms, ncpu=64):
-    """
-    多进程调度：拆表 → 分配进程 → 合并。
-    """
-    tab = Table.read(path_table)
-
-    n_total = len(tab)
-    indices = np.linspace(0, n_total, ncpu + 1, dtype=int)
-    process_list = []
-    for j in range(ncpu):
-        start = indices[j]
-        end = indices[j + 1]
-        if start == end:
-            continue
-        sub_tab = tab[start:end]
-        process_list.append(
-            Process(target=run_single, args=(sub_tab, parms))
-        )
-
-    for p in process_list:
-        p.start()
-        time.sleep(0.01)
-
-    for p in process_list:
-        p.join()
-
-
 def run_all():
     """
     主入口：设置路径，准备输出目录，启动多进程处理。
@@ -97,7 +68,7 @@ def run_all():
         'eyeball_dir': EYEBALL_SATURATE_DIR
     }
 
-    run_multi(TABLE_PATH, parms, ncpu=64)
+    run_multi(run_single, TABLE_PATH, parms, ncpu=64)
 
 
 if __name__ == "__main__":

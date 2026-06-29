@@ -13,13 +13,11 @@
 from astropy.table import Table
 from astropy.io import fits, ascii
 import numpy as np
-from multiprocessing import Process
-import time
 import os
 
 # 架构导入
 from config import *
-from my_tools import check_dir, get_ellipse
+from my_tools import check_dir, get_ellipse, run_multi
 
 def run_single(table, parms):
     """
@@ -97,29 +95,6 @@ def run_single(table, parms):
         fits.PrimaryHDU(data=ext_seg,
                         header=hdr).writeto(path_out)
 
-def run_multi(path_table, parms, ncpu=120):
-    tab = Table.read(path_table)
-
-    n_total = len(tab)
-    indices = np.linspace(0, n_total, ncpu + 1, dtype=int)
-    process_list = []
-    for j in range(ncpu):
-        start = indices[j]
-        end = indices[j + 1]
-        if start == end:
-            continue
-        sub_tab = tab[start:end]
-        process_list.append(
-            Process(target=run_single, args=(sub_tab, parms))
-        )
-
-    for p in process_list:
-        p.start()
-        time.sleep(0.01)
-
-    for p in process_list:
-        p.join()
-
 def run_all():
     check_dir(COMPANION_MASK_DIR, clean=True)
 
@@ -130,7 +105,7 @@ def run_all():
         'mask_dir':   COMPANION_MASK_DIR
     }
 
-    run_multi(TABLE_PATH, parms, ncpu=120)
+    run_multi(run_single, TABLE_PATH, parms, ncpu=120)
 
 if __name__ == "__main__":
     run_all()

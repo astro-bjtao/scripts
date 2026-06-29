@@ -11,8 +11,6 @@
 from astropy.table import Table
 from astropy.io import fits
 import numpy as np
-from multiprocessing import Process
-import time
 import os
 
 # matplotlib 设置（需要在任何画图导入之前设置好 rcParams）
@@ -74,33 +72,6 @@ def run_single(table, parms):
             print(f"[ERROR] Eyeball plot failed for {label}_{index}: {e}")
 
 
-def run_multi(path_table, parms, ncpu=120):
-    """
-    多进程调度：拆表 → 分配进程 → 合并。
-    """
-    tab = Table.read(path_table)
-
-    n_total = len(tab)
-    indices = np.linspace(0, n_total, ncpu + 1, dtype=int)
-    process_list = []
-    for j in range(ncpu):
-        start = indices[j]
-        end = indices[j + 1]
-        if start == end:
-            continue
-        sub_tab = tab[start:end]
-        process_list.append(
-            Process(target=run_single, args=(sub_tab, parms))
-        )
-
-    for p in process_list:
-        p.start()
-        time.sleep(0.01)
-
-    for p in process_list:
-        p.join()
-
-
 def run_all():
     """
     主入口：设置路径，准备输出目录，启动多线程处理。
@@ -113,7 +84,7 @@ def run_all():
         'eyeball_dir':  EYEBALL_IMG_DIR_2      
     }
 
-    run_multi(TABLE_PATH, parms, ncpu=120)
+    run_multi(run_single, TABLE_PATH, parms, ncpu=120)
 
 
 if __name__ == "__main__":
