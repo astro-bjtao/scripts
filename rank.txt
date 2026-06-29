@@ -30,4 +30,5 @@ eyeball_saturate.py
 
 PROPS_ORIGINAL
 free_fitting_original.py
+free_fitting_original_2.py
 eyeball_fitting.py
