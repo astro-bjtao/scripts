@@ -48,35 +48,11 @@ def run_single(table, parms):
         maxsma = xc/2
         eps = 0.5
 
-        # 几何序列，保证不同星系的 sma 对齐
-        list_init = (300/0.168) * 1.1**(-1*np.arange(60))
-
-        def get_initsma(target):
-            """从 list_init 中找最接近 target 的值"""
-            delta = np.abs(list_init - target)
-            flag = delta < (np.min(delta) + 0.01)
-            return float(list_init[flag][0])
-
-        def try_fit(initsma, pa):
-            """尝试拟合，成功返回 iso_table，失败返回 None"""
-            try:
-                iso = Ellipse_free(masked_image,
-                                    xc, yc, eps, pa,
-                                    initsma, minsma, maxsma,
-                                    step=0.1, fix_center=True, fix_pa=False)
-                iso_tab = iso_to_table(iso)
-                iso_table = reshape_isotable(iso_tab)
-                if len(iso_table) > 0:
-                    return iso_table
-            except Exception:
-                pass
-            return None
-
         # 阶段 1：逐步减小 initsma（pa=0）
         fitted = False
         for frac in [2, 3, 4]:
             initsma = get_initsma(sma_27 / frac)
-            iso_table = try_fit(initsma, pa_candidates[0])
+            iso_table = try_fit(masked_image, xc, yc, eps, pa_candidates[0], initsma, minsma, maxsma)
             if iso_table is not None:
                 iso_table.write(path_iso)
                 fitted = True
@@ -86,7 +62,7 @@ def run_single(table, parms):
         if not fitted:
             initsma = get_initsma(sma_27 / 5)
             for pa in pa_candidates[1:]:  # pa=0 已在阶段 1 尝试过
-                iso_table = try_fit(initsma, pa)
+                iso_table = try_fit(masked_image, xc, yc, eps, pa, initsma, minsma, maxsma)
                 if iso_table is not None:
                     iso_table.write(path_iso)
                     fitted = True

@@ -641,3 +641,38 @@ def reshape_isotable(iso_table):
         tab.add_column(col)
     
     return tab
+
+
+# ============================================================
+#  拟合工具：initsma 查找 + try_fit
+# ============================================================
+
+# 等距几何序列，保证不同星系的 sma 对齐
+_INIT_SMA_LIST = (300 / 0.168) * 1.1 ** (-1 * np.arange(60))
+
+
+def get_initsma(target, list_init=None):
+    """从几何序列中找最接近 target 的值"""
+    if list_init is None:
+        list_init = _INIT_SMA_LIST
+    delta = np.abs(list_init - target)
+    flag = delta < (np.min(delta) + 0.01)
+    return float(list_init[flag][0])
+
+
+def try_fit(masked_image, xc, yc, eps, pa, initsma, minsma, maxsma, step=0.1):
+    """尝试自由拟合，成功返回 iso_table，失败返回 None"""
+    try:
+        iso = Ellipse_free(
+            masked_image,
+            xc, yc, eps, pa,
+            initsma, minsma, maxsma,
+            step=step, fix_center=True, fix_pa=False,
+        )
+        iso_tab = iso_to_table(iso)
+        iso_table = reshape_isotable(iso_tab)
+        if len(iso_table) > 0:
+            return iso_table
+    except Exception:
+        pass
+    return None
