@@ -21,14 +21,17 @@ from my_tools import *
 def run():
     """对手动指定初始条件的星系进行拟合"""
 
-    # ---- 目标星系 (label, index, pa_deg, eps) ----
-    # initsma 统一为 r27/2
+    # ---- 目标星系 (label, index, pa_deg_Xplus, eps) ----
+    # PA 用 moments_estimate 估计（X+ 约定），initsma = r27/3
     targets = [
-        ('gama', 2573,  170, 0.7),
-        ('vagc', 47858, 160, 0.8),
-        ('vagc', 95552, 20,  0.8),
-        ('vagc', 99948, 30,  0.8),
+        # ('gama', 2573,  170, 0.7),   # 已跑通
+        ('vagc', 47858, 82,  0.60),
+        # ('vagc', 95552, 113, 0.55),  # 已跑通
+        # ('vagc', 99948, 30,  0.8),   # 已跑通
     ]
+
+    # initsma 分母：1 → sma_27，2 → r27/2，3 → r27/3
+    initsma_frac = 1
 
     # ---- 路径 ----
     dir_img  = IMG_DIR_2
@@ -53,8 +56,8 @@ def run():
         # PA 转换为弧度
         pa_rad = pa_deg * np.pi / 180.0
 
-        # initsma 从几何序列中取最接近 r27/2 的值
-        initsma = get_initsma(r27 / 2)
+        # initsma 从几何序列中取最接近 r27/N 的值
+        initsma = get_initsma(r27 / initsma_frac)
 
         # 文件路径
         suffix     = f"{label}_{index}.fits"

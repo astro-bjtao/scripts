@@ -676,3 +676,119 @@ def try_fit(masked_image, xc, yc, eps, pa, initsma, minsma, maxsma, step=0.1):
     except Exception:
         pass
     return None
+
+
+# ============================================================
+#  图像矩估计：从不规则星系图像估算初始 eps 和 PA
+# ============================================================
+
+def moments_estimate(masked_image, xc, yc, r_in, r_out):
+    """
+    在环形区域内计算通量加权的二阶矩，估计星系的椭圆率 eps 和位置角 PA。
+
+    原理
+    ----
+    星系的光度分布可以用二阶中心矩来描述：
+
+        Q_xx = Σ I(x,y) · (x - x̄)² / Σ I(x,y)
+        Q_yy = Σ I(x,y) · (y - ȳ)² / Σ I(x,y)
+        Q_xy = Σ I(x,y) · (x - x̄)(y - ȳ) / Σ I(x,y)
+
+    其中 x̄, ȳ 是环形区域内的通量加权质心（与 X+ 轴夹角）。
+
+    从 Q 矩阵的特征值可以推导半长轴 a 和半短轴 b：
+
+        a² = (Q_xx + Q_yy)/2 + √[((Q_xx - Q_yy)/2)² + Q_xy²]
+        b² = (Q_xx + Q_yy)/2 - √[((Q_xx - Q_yy)/2)² + Q_xy²]
+
+    椭圆率  eps = 1 - b/a         （photutils 约定，0 = 正圆）
+    位置角  PA  = 0.5 · atan2(2·Q_xy, Q_xx - Q_yy)    （弧度，从 X+ 逆时针）
+
+    Parameters
+    ----------
+    masked_image : numpy.ma.MaskedArray
+        被掩模的星系图像（mask=True 的像素不参与计算）。
+    xc, yc : float
+        初始中心坐标（0-indexed），用于定义环形区域的原点。
+    r_in, r_out : float
+        环形区域的内/外半径（像素）。选择不同的 r_in/r_out 可以探测
+        不同半径处的形状（星系往往在外部更圆或更扁）。
+
+    Returns
+    -------
+    eps : float or None
+        估计的椭圆率 (0 ≤ eps < 1)，无法估计时返回 None。
+    pa_deg : float or None
+        估计的位置角（度，0° ≤ pa < 180°，从 X+ 逆时针），无法估计时返回 None。
+        此 PA 可直接用于 photutils EllipseGeometry 的 pa 参数。
+
+    使用示例
+    --------
+    >>> from my_tools import moments_estimate, make_masked_image
+    >>> img, hdr = fits.getdata('galaxy.fits', header=True)
+    >>> mask = fits.getdata('mask.fits')
+    >>> masked = make_masked_image(img, mask)
+    >>> xc, yc = convert_wcs(ra, dec, hdr)
+    >>>
+    >>> # 在不同半径处估计，外层通常更能代表星系的整体形状
+    >>> for r_in, r_out in [(5,20), (10,30), (r27/4, r27/2)]:
+    >>>     eps, pa = moments_estimate(masked, xc, yc, r_in, r_out)
+    >>>     print(f"r=[{r_in:.0f},{r_out:.0f}]: eps={eps:.3f}, pa={pa:.0f}°")
+
+    注意事项
+    --------
+    - 该方法假设环形区域内至少有 10 个未掩模像素，否则返回 (None, None)。
+    - 矩估计受亮核、邻近源、掩模边界的影响较大，建议多试几个环形区域
+      对比一致性，外层（r > r27/4）通常更能反映星系的整体取向。
+    - 结果可作为自由拟合的初始值，真正的收敛值以 Ellipse 拟合结果为准。
+
+    坐标系说明
+    -----------
+    - 返回的 PA 从 X+ 轴逆时针测量（photutils/astropy 标准约定）。
+    - 如果原始 PA 记录是从 Y+ 轴起算（如部分星表），需要 -90° 转换：
+      PA(X+) = PA(Y+) - 90°。
+    """
+    ny, nx = masked_image.data.shape
+    y, x = np.indices((ny, nx), dtype=np.float64)
+
+    # 环形区域：r_in < r < r_out 且未被 mask
+    r = np.hypot(x - xc, y - yc)
+    ring_mask = (r > r_in) & (r < r_out) & (~masked_image.mask)
+
+    if ring_mask.sum() < 10:
+        return None, None
+
+    flux = masked_image.data[ring_mask]
+    x_sel = x[ring_mask]
+    y_sel = y[ring_mask]
+
+    # 通量加权质心（环形区域内）
+    total_flux = np.sum(flux)
+    x_c = np.sum(flux * x_sel) / total_flux
+    y_c = np.sum(flux * y_sel) / total_flux
+
+    # 通量加权的二阶中心矩
+    x2 = np.sum(flux * (x_sel - x_c)**2) / total_flux
+    y2 = np.sum(flux * (y_sel - y_c)**2) / total_flux
+    xy = np.sum(flux * (x_sel - x_c) * (y_sel - y_c)) / total_flux
+
+    # 特征值分解 → a², b²
+    d = np.sqrt(((x2 - y2) / 2)**2 + xy**2)
+    a2 = (x2 + y2) / 2 + d
+    b2 = (x2 + y2) / 2 - d
+
+    if a2 <= 0 or b2 <= 0 or b2 > a2:
+        return None, None
+
+    # eps = 1 - b/a
+    eps = 1.0 - np.sqrt(b2 / a2)
+
+    # PA: 0.5 * atan2(2*Q_xy, Q_xx - Q_yy)，从 X+ 逆时针，弧度
+    pa_rad = 0.5 * np.arctan2(2.0 * xy, x2 - y2)
+    pa_deg = pa_rad * 180.0 / np.pi
+
+    # 规范化到 [0°, 180°)
+    if pa_deg < 0:
+        pa_deg += 180.0
+
+    return float(eps), float(pa_deg)
