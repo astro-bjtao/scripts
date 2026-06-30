@@ -97,6 +97,11 @@ def run_single(table, parms):
 
         if not fitted:
             print(f"{label}_{index} failed to fit")
+        else:
+            # 后处理：平滑 eps/PA 跃变，修复轮廓重叠
+            iso_raw = Table.read(path_iso)
+            iso_smooth, _ = smooth_isotable(iso_raw)
+            iso_smooth.write(path_iso, overwrite=True)
 
 def run_all():
     """

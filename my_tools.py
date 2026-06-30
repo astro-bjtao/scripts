@@ -792,3 +792,125 @@ def moments_estimate(masked_image, xc, yc, r_in, r_out):
         pa_deg += 180.0
 
     return float(eps), float(pa_deg)
+
+
+# ============================================================
+#  等强度线后处理：平滑 eps/PA 跃变，修复轮廓重叠
+# ============================================================
+
+def smooth_isotable(iso, sigma_clip=3.0, window=7):
+    """
+    平滑等强度线的 eps 和 PA，修复跃变和轮廓重叠。
+
+    等强度线拟合有时会在个别半径处产生 eps/PA 突变，导致等轮廓线交叉
+    或重叠。本函数用 Savitzky-Golay 滤波器在 log(sma) 空间建立平滑基线，
+    sigma-clip 检测偏离基线的异常点，用线性插值替换。
+
+    算法步骤
+    --------
+    1. stop_code==4 的等强度线：用前一条有效线的值填充
+    2. 在 log(sma) 空间做 SG 平滑，得到 eps/PA 基线
+    3. 残差 > sigma_clip * MAD 的点标记为异常
+    4. 异常点的 eps/PA 用 log(sma) 线性插值替换
+    5. 确保半短轴 b = sma*(1-eps) 单调递增
+
+    Parameters
+    ----------
+    iso : astropy.table.Table
+        等强度线表，需包含 sma, ellipticity, pa, stop_code 列。
+    sigma_clip : float
+        异常检测的 sigma 阈值，默认 3.0。越小越激进。
+    window : int
+        SG 滤波器窗口（奇数），默认 7。越大越平滑。
+
+    Returns
+    -------
+    iso_fixed : astropy.table.Table
+        修复后的等强度线表（新表，不修改原表）。
+    stats : dict
+        修复统计：n_fixed_eps, n_fixed_pa, n_fixed_overlap。
+    """
+    from scipy.signal import savgol_filter
+
+    iso = iso.copy()
+    n = len(iso)
+    sma   = iso['sma'].data.copy()
+    eps   = iso['ellipticity'].data.copy()
+    pa    = iso['pa'].data.copy()
+    stop  = iso['stop_code'].data.copy()
+    log_sma = np.log(sma)
+
+    stats = {'n_fixed_eps': 0, 'n_fixed_pa': 0, 'n_fixed_overlap': 0}
+
+    # Step 0：stop_code==4 用前一条有效值填充
+    for i in range(n):
+        if stop[i] == 4 and i > 0:
+            eps[i] = eps[i-1]
+            pa[i]  = pa[i-1]
+            stats['n_fixed_eps'] += 1
+            stats['n_fixed_pa'] += 1
+
+    # 只对 stop_code != 4 的点做异常检测
+    valid = (stop != 4)
+    n_valid = valid.sum()
+    if n_valid < 5:
+        iso['ellipticity'] = eps
+        iso['pa'] = pa
+        return iso, stats
+
+    idx_valid = np.where(valid)[0]
+
+    # 调整窗口大小
+    w = window if window % 2 == 1 else window + 1
+    w = min(w, n_valid if n_valid % 2 == 1 else n_valid - 1)
+    w = max(w, 3)
+
+    log_sma_v = log_sma[valid]
+    eps_v = eps[valid]
+    pa_v  = pa[valid]
+
+    # 按 log_sma 排序
+    order = np.argsort(log_sma_v)
+    xs = log_sma_v[order]
+    es = eps_v[order]
+    ps = pa_v[order]
+
+    es_sg = savgol_filter(es, w, 2)
+    ps_sg = savgol_filter(ps, w, 2)
+
+    # Sigma-clip
+    r_eps = np.abs(es - es_sg)
+    r_pa  = np.abs(ps - ps_sg)
+    th_eps = sigma_clip * np.median(r_eps) * 1.4826 + 0.02
+    th_pa  = sigma_clip * np.median(r_pa)  * 1.4826 + 3.0
+
+    bad = (r_eps > th_eps) | (r_pa > th_pa)
+    stats['n_fixed_eps'] += np.sum(r_eps > th_eps)
+    stats['n_fixed_pa']  += np.sum(r_pa  > th_pa)
+
+    # 插值修复
+    if bad.any() and (~bad).sum() >= 2:
+        good_xs = xs[~bad]
+        good_es = es[~bad]
+        good_ps = ps[~bad]
+        es[bad] = np.interp(xs[bad], good_xs, good_es)
+        ps[bad] = np.interp(xs[bad], good_xs, good_ps)
+
+    # 写回 eps/pa
+    eps_final = eps.copy()
+    pa_final  = pa.copy()
+    eps_final[idx_valid[order]] = es
+    pa_final[idx_valid[order]]  = ps
+
+    # 确保半短轴单调递增
+    b = sma * (1 - eps_final)
+    for i in range(1, n):
+        if b[i] <= b[i-1]:
+            b_min = b[i-1] * 1.001
+            eps_final[i] = max(0.0, min(0.99, 1.0 - b_min / sma[i]))
+            b[i] = sma[i] * (1 - eps_final[i])
+            stats['n_fixed_overlap'] += 1
+
+    iso['ellipticity'] = eps_final
+    iso['pa'] = pa_final
+    return iso, stats
