@@ -48,21 +48,48 @@ def run_single(table, parms):
         maxsma = xc/2
         eps = 0.5
 
-        # 阶段 1：逐步减小 initsma（pa=0）
+        # 阶段 0：矩估计 — 在 (sma_27/2, sma_27) 区间自动测量 eps 和 PA
+        eps_est, pa_est = moments_estimate(masked_image, xc, yc,
+                                           sma_27 / 2, sma_27)
+
         fitted = False
-        for frac in [2, 3, 4]:
-            initsma = get_initsma(sma_27 / frac)
-            iso_table = try_fit(masked_image, xc, yc, eps, pa_candidates[0], initsma, minsma, maxsma)
+
+        if eps_est is not None:
+            # 阶段 1：initsma = sma_27，使用矩估计的 eps 和 PA
+            initsma = get_initsma(sma_27)
+            iso_table = try_fit(masked_image, xc, yc, eps_est, pa_est,
+                                initsma, minsma, maxsma)
             if iso_table is not None:
                 iso_table.write(path_iso)
                 fitted = True
-                break
 
-        # 阶段 2：固定 initsma=sma_27/5，尝试不同 pa
+        if not fitted and eps_est is not None:
+            # 阶段 2：initsma = sma_27/2，使用矩估计的 eps 和 PA
+            initsma = get_initsma(sma_27 / 2)
+            iso_table = try_fit(masked_image, xc, yc, eps_est, pa_est,
+                                initsma, minsma, maxsma)
+            if iso_table is not None:
+                iso_table.write(path_iso)
+                fitted = True
+
         if not fitted:
+            # 阶段 3（fallback）：逐步减小 initsma（pa=0）
+            for frac in [2, 3, 4]:
+                initsma = get_initsma(sma_27 / frac)
+                iso_table = try_fit(masked_image, xc, yc, eps,
+                                    pa_candidates[0],
+                                    initsma, minsma, maxsma)
+                if iso_table is not None:
+                    iso_table.write(path_iso)
+                    fitted = True
+                    break
+
+        if not fitted:
+            # 阶段 4（fallback）：initsma=sma_27/5，尝试不同 pa
             initsma = get_initsma(sma_27 / 5)
-            for pa in pa_candidates[1:]:  # pa=0 已在阶段 1 尝试过
-                iso_table = try_fit(masked_image, xc, yc, eps, pa, initsma, minsma, maxsma)
+            for pa in pa_candidates[1:]:
+                iso_table = try_fit(masked_image, xc, yc, eps,
+                                    pa, initsma, minsma, maxsma)
                 if iso_table is not None:
                     iso_table.write(path_iso)
                     fitted = True
