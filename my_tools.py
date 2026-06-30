@@ -842,6 +842,24 @@ def smooth_isotable(iso, sigma_clip=3.0, window=7):
 
     stats = {'n_fixed_eps': 0, 'n_fixed_pa': 0, 'n_fixed_overlap': 0}
 
+    # ---- 辅助：PA 相位解缠 ----
+    # PA 定义在 [0°, 180°)，179° 和 1° 只差 2° 但数值差 178°。
+    # 解缠后 PA 在实轴上连续，消除虚假的 180° 跃变。
+    def _unwrap_pa(pa_sorted):
+        """对按 sma 排序的 PA 解缠，使相邻值差 < 90°"""
+        pu = pa_sorted.copy().astype(np.float64)
+        for i in range(1, len(pu)):
+            diff = pu[i] - pu[i-1]
+            if diff > 90:
+                pu[i] -= 180
+            elif diff < -90:
+                pu[i] += 180
+        return pu
+
+    def _wrap_pa(pu):
+        """解缠后的 PA 映射回 [0°, 180°)"""
+        return pu % 180.0
+
     # Step 0：stop_code==4 用前一条有效值填充
     for i in range(n):
         if stop[i] == 4 and i > 0:
@@ -873,12 +891,15 @@ def smooth_isotable(iso, sigma_clip=3.0, window=7):
     order = np.argsort(log_sma_v)
     xs = log_sma_v[order]
     es = eps_v[order]
-    ps = pa_v[order]
+    ps_raw = pa_v[order]
+
+    # PA 解缠，消除 0°/180° 边界处的虚假跃变
+    ps = _unwrap_pa(ps_raw)
 
     es_sg = savgol_filter(es, w, 2)
     ps_sg = savgol_filter(ps, w, 2)
 
-    # Sigma-clip
+    # Sigma-clip（残差在解缠后的连续 PA 上计算）
     r_eps = np.abs(es - es_sg)
     r_pa  = np.abs(ps - ps_sg)
     th_eps = sigma_clip * np.median(r_eps) * 1.4826 + 0.02
@@ -888,7 +909,7 @@ def smooth_isotable(iso, sigma_clip=3.0, window=7):
     stats['n_fixed_eps'] += np.sum(r_eps > th_eps)
     stats['n_fixed_pa']  += np.sum(r_pa  > th_pa)
 
-    # 插值修复
+    # 插值修复（在解缠空间）
     if bad.any() and (~bad).sum() >= 2:
         good_xs = xs[~bad]
         good_es = es[~bad]
@@ -896,11 +917,11 @@ def smooth_isotable(iso, sigma_clip=3.0, window=7):
         es[bad] = np.interp(xs[bad], good_xs, good_es)
         ps[bad] = np.interp(xs[bad], good_xs, good_ps)
 
-    # 写回 eps/pa
+    # 写回 eps/pa（PA 从解缠空间映射回 [0°, 180°)）
     eps_final = eps.copy()
     pa_final  = pa.copy()
     eps_final[idx_valid[order]] = es
-    pa_final[idx_valid[order]]  = ps
+    pa_final[idx_valid[order]]  = _wrap_pa(ps)
 
     # 确保半短轴单调递增
     b = sma * (1 - eps_final)
