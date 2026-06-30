@@ -896,10 +896,21 @@ def smooth_isotable(iso, sigma_clip=3.0, window=7):
     # PA 解缠，消除 0°/180° 边界处的虚假跃变
     ps = _unwrap_pa(ps_raw)
 
-    es_sg = savgol_filter(es, w, 2)
-    ps_sg = savgol_filter(ps, w, 2)
+    # ---- PA 系统性漂移检测 ----
+    # 正常情况下 PA 近似恒定（变化 < 45°）。若解缠后 PA 变化范围 > 45°，
+    # 说明拟合在低 S/N 外区跟丢了方向（如 vagc_424082）。此时用更大的
+    # SG 窗口来压低基线，使漂移段能被 sigma-clip 检测到。
+    pa_range = np.ptp(ps)  # peak-to-peak
+    w_pa = w
+    if pa_range > 45:
+        # 大窗口：取 n_valid//3（奇数），至少为 w 的 2 倍
+        w_pa = max(w * 2, (n_valid // 3) | 1)
+        w_pa = min(w_pa, n_valid if n_valid % 2 == 1 else n_valid - 1)
 
-    # Sigma-clip（残差在解缠后的连续 PA 上计算）
+    es_sg = savgol_filter(es, w, 2)
+    ps_sg = savgol_filter(ps, w_pa, 2)
+
+    # Sigma-clip（PA 残差在解缠后的连续空间计算）
     r_eps = np.abs(es - es_sg)
     r_pa  = np.abs(ps - ps_sg)
     th_eps = sigma_clip * np.median(r_eps) * 1.4826 + 0.02
