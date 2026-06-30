@@ -17,7 +17,7 @@ import math
 # 路径配置
 from config import *
 # 通用工具
-from my_tools import check_dir, run_multi
+from my_tools import check_dir, run_multi, convert_wcs
 
 ### Profile Manual
 def DistCircle(shape, cenx, ceny):
@@ -217,18 +217,6 @@ def ProfileQuarters(data, xc, yc, max_sma):
     
     return tab
 
-
-### geometry
-
-def convert_wcs(ra, dec, hdr):
-
-    sky = SkyCoord(ra=ra*u.degree, dec=dec*u.degree)
-    w = WCS(header=hdr)
-    xc, yc = w.world_to_pixel(sky)
-    xc = float(xc)
-    yc = float(yc)
-
-    return xc, yc
 
 # mask thresh multiprocess
 

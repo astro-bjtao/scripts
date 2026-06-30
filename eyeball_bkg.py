@@ -7,16 +7,11 @@
 from astropy.table import Table
 from astropy.io import fits
 import numpy as np
-
-import shutil
 import os
 
-from astropy.visualization import ImageNormalize
-from astropy.visualization.stretch import LogStretch, LinearStretch
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.patches as patches
-#plt.style.use('classic')
 
 ### set rcParams
 plt.rcParams['font.sans-serif'] = "Times New Roman"
