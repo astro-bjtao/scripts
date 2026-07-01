@@ -57,7 +57,9 @@ scripts/
 | 步骤 | 脚本 | 说明 |
 |------|------|------|
 | 4.1 | `fitting/free_fitting_original.py` | Ellipse 拟合 + moments_estimate + smooth_isotable → `PROPS_ORIGINAL_ISOTAB` |
-| 4.2 | `fitting/eyeball_fitting.py` | 1Re/2Re 目视检查图 → `PROPS_ORIGINAL_EYEBALL_FITTING` |
+| 4.2 | `fitting/build_model.py [image\|var]` | 椭圆模型构建 → `PROPS_ORIGINAL_BMODEL[_VAR]` |
+| 4.3 | `fitting/clean_pixels.py [image\|var]` | 用模型替换掩模像素 → `PROPS_ORIGINAL_CLEAN_IMAGE[_VAR]` |
+| 4.4 | `fitting/eyeball_fitting.py` | 1Re/2Re 目视检查图 → `PROPS_ORIGINAL_EYEBALL_FITTING` |
 
 ## 5. EYEBALL — 辅助目视检查 `eyeball/`
 
@@ -74,5 +76,7 @@ cd /data1/bjtao/StellarHalo_z02/Process2/scripts
 python mask/mask_total.py
 python bkg/profile_quarters.py
 python fitting/free_fitting_original.py
+python fitting/build_model.py         # 或 build_model.py var
+python fitting/clean_pixels.py        # 或 clean_pixels.py var
 python fitting/eyeball_fitting.py
 ```
