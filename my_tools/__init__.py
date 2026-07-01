@@ -20,7 +20,7 @@ from astropy.table import Table, Column
 from astropy.io import fits
 
 # --- io ---
-from my_tools._io import check_dir, run_multi
+from my_tools._io import check_dir, run_multi, run_multi_flat
 
 # --- image ---
 from my_tools._image import (
