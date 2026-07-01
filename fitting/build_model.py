@@ -5,7 +5,7 @@
 
 支持两种模式：
   - image : 对科学图像（IMG_DIR_2）建模 → bmodel/
-  - var   : 对误差图像（VAR_DIR，sigma→variance）建模 → bmodel_var/
+  - var   : 对方差图像（VAR_DIR）建模 → bmodel_var/
 """
 
 import numpy as np
@@ -38,11 +38,8 @@ def run_single(table, parms):
             path_out  = os.path.join(dir_out,  suffix_clr)
 
             img, hdr = fits.getdata(path_img, header=True)
-
             if is_var:
-                # sigma → variance
                 img[np.isnan(img) | np.isinf(img)] = 0.0
-                img = img ** 2
 
             mask = fits.getdata(path_mask)
             masked = make_masked_image(img, mask)

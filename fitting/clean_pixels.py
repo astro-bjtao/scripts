@@ -5,7 +5,7 @@
 
 支持两种模式：
   - image : 科学图像（IMG_DIR_2）+ bmodel → clean_image/
-  - var   : 误差图像（VAR_DIR）+ bmodel_var → clean_var/
+  - var   : 方差图像（VAR_DIR）+ bmodel_var → clean_var/
 """
 
 import numpy as np
@@ -39,7 +39,6 @@ def run_single(table, parms):
             img, hdr = fits.getdata(path_img, header=True)
             if is_var:
                 img[np.isnan(img) | np.isinf(img)] = 0.0
-                img = img ** 2
 
             mask  = fits.getdata(path_mask)
             model = fits.getdata(path_model)
