@@ -131,10 +131,12 @@ def reshape_isotable(iso_table):
     ]
     tab = Table()
     for name in col_names:
-        data = iso_table[name].data
-        if data.dtype == object:
+        col_dtype = iso_table[name].dtype        # 列级别的 dtype
+        data = np.array(iso_table[name].data)    # 统一转为 ndarray（处理 memoryview）
+        if col_dtype == object or data.dtype == object:
             data = data.astype(np.float64)
-        tab.add_column(Column(data=data, name=name, dtype=data.dtype))
+            col_dtype = np.float64
+        tab.add_column(Column(data=data, name=name, dtype=col_dtype))
     return tab
 
 
