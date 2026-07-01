@@ -15,6 +15,10 @@ my_tools — StellarHalo Process2 通用工具集
 所有公开函数均从顶层 ``my_tools`` 直接导入，保持向后兼容。
 """
 
+# 原 my_tools.py 顶层导入（scipy/numpy/matplotlib 除外，按需在各子模块导入）
+from astropy.table import Table, Column
+from astropy.io import fits
+
 # --- io ---
 from my_tools._io import check_dir, run_multi
 
