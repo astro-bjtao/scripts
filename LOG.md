@@ -1,76 +1,87 @@
-# 工作日志 · 2026-06-30
+# 工作日志
 
-## 概述
+## 2026-07-01 · 管线扩展与修复
 
-完成 `scripts/` 代码库的规范化重构，核心拟合管线从手动调参进化为全自动化。
+### 重构修复
 
-## 关键发现
+**reshape_isotable bug**：重构到 `_fitting.py` 时 `iso[name].data.dtype` 改为 `data.dtype`，但 photutils 返回 `memoryview` 无 `.dtype` 属性，导致全样本 94/98 失败。修复后用 `np.array()` 统一转换 + 列级 dtype 检测。
 
-### PA 坐标系差异
-用户表格中的 PA 从 **Y+ 轴**起算，而 `photutils.EllipseGeometry` 的 PA 从 **X+ 轴**逆时针测量。两者差 90°。`moments_estimate()` 返回的 PA 已自动使用 X+ 约定。
+**my_tools/__init__.py 缺失导出**：`Table`, `Column`, `fits` 在原 `my_tools.py` 顶层导入，重构时遗漏。子进程 `from my_tools import *` 拿不到 `Table`，`NameError`。已补充。
 
-### 等强度线跃变与重叠
-部分星系在低 S/N 外区出现 eps/PA 突变或轮廓重叠。原因是拟合在低信噪比区域跟丢了正确的椭圆方向。通过 `smooth_isotable()` 自动检测和修复。
+**row['survey'] str/bytes 兼容**：`run_multi_flat` 中 `str(row['survey'], encoding='utf-8')` 对 str 类型报错。改为 `isinstance(val, bytes)` 判断。
 
-### PA 系统性漂移 (vagc_424082)
-PA 从 ~31° 持续漂移到 ~160°，几乎转了 180°。原因是 SG 滤波（window=7）跟随了漂移趋势，导致残差小、检测不到。修复：加入 PA 漂移检测，当变化范围 > 45° 时自动扩大平滑窗口。
-
-## 新增功能
+### 新增功能
 
 | 函数 | 文件 | 说明 |
 |------|------|------|
-| `get_initsma` | `my_tools/_fitting.py` | 从几何序列查找最接近的初始 sma |
-| `try_fit` | `my_tools/_fitting.py` | 带异常捕获的拟合封装 |
-| `moments_estimate` | `my_tools/_fitting.py` | 通量加权二阶矩估计 eps/PA |
-| `smooth_isotable` | `my_tools/_fitting.py` | 等强度线平滑：SG 滤波 + sigma-clip + 插值 + PA 解缠 + 漂移检测 |
+| `run_multi_flat` | `my_tools/_io.py` | 星系×波段展开调度，98×3=294任务→120进程 |
 
-## 重构
+### bmodel / clean 管线整合
 
-### my_tools.py → my_tools/ 包（938 行 → 7 模块）
-- `_io.py` (57行) — 目录操作、多进程
-- `_image.py` (162行) — 图像处理
-- `_plot.py` (153行) — 画图
-- `_cosmo.py` (39行) — 宇宙学
-- `_bkg.py` (68行) — 背景测量
-- `_fitting.py` (310行) — 拟合 + 平滑
-- `__init__.py` — 统一导出，**完全向后兼容**
+4 个旧脚本（各含重复函数）→ 2 个统一脚本：
 
-### 目录重组
-平铺 20 个脚本 → 4 个子目录（`mask/` `bkg/` `fitting/` `eyeball/`），按管线阶段分类。
+| 旧 | 新 | 模式 |
+|------|------|------|
+| `bmodel.py` + `bmodel_var.py` | `fitting/build_model.py [image\|var]` | image→`bmodel/`, var→`bmodel_var/` |
+| `clean_image.py` + `clean_var.py` | `fitting/clean_pixels.py [image\|var]` | image→`clean_image/`, var→`clean_var/` |
 
-### 代码清理
-- `profile_quarters.py` 删除重复的 `convert_wcs`
-- `eyeball_bkg.py` 清理 4 个未使用 import
+- 旧代码 sigma² 逻辑已移除（VAR_DIR 存的是方差非标准差）
+- 新增 `config.py` 路径：`PROPS_ORIGINAL_BMODEL_VAR`, `CLEAN_IMAGE`, `CLEAN_VAR`
 
-### 文档
-- 新增 `PIPELINE.md`（管线顺序）
-- 新增 `README.md`（项目简介）
-- 新增 `LOG.md`（本文件）
+### 基础设施
 
-## 拟合管线收敛
+- `compare_old/` — 重构前后对比档案（原版 my_tools.py + 55项审计脚本）
+- 审计结果：所有 55 项功能测试等价
+- 服务器节点选择：跑前检查 node01/02/03 负载，选最低的
 
-`free_fitting_original.py` 最终达到 **98/98 星系零失败**：
+### 代码规范
+
+- **先验证后删除**：重构后必须服务器实测通过再删旧文件
+
+### 提交（共 13 commits）
 
 ```
-阶段 0: moments_estimate(sma_27/2, sma_27) → eps_est, pa_est
-阶段 1: initsma=sma_27   + (eps_est, pa_est)
-阶段 2: initsma=sma_27/2 + (eps_est, pa_est)
-阶段 3: initsma 递减      + pa=0              (fallback)
-阶段 4: initsma=sma_27/5 + 遍历 PA           (fallback)
-后处理: smooth_isotable()
+ef55f26 修复 run_multi_flat: row['survey'] 兼容 str/bytes
+f03413c 新增 run_multi_flat: 星系×波段展开调度
+6e07ed5 修复 build_model/clean_pixels: VAR_DIR 已是方差
+57b7ae5 整合 bmodel/clean 管线 (4旧→2新)
+3848f26 优化并行: 星系×波段展开, 跑满120核
+646df8a 重构 bmodel.py: 适配当前代码框架
+e67e306 修复 __init__.py: 补充 Table/Column/fits 导出
+5a2aa62 存档: 重构前后 my_tools 对比档案
+fdbf8ad 修复 reshape_isotable: memoryview .dtype 兼容
+2441230 新增 README.md 和 LOG.md
 ```
 
-## 提交记录
+## 2026-06-30 · 拟合管线自动化与代码库重构
+
+### 拟合从手动调参到全自动化
+
+- 4 个失败星系通过手动调参全部修复 → 提取规律
+- 创建 `moments_estimate` 自动估计 eps/PA（二阶矩法）
+- 创建 `smooth_isotable` 自动修复等强度线跃变和重叠
+- 整合进 `free_fitting_original.py`：**98/98 零失败**
+
+### my_tools.py 拆分 + 目录重组
+
+- 938 行单文件 → `my_tools/` 包 7 模块
+- 20 脚本平铺 → `mask/` `bkg/` `fitting/` `eyeball/` 按管线分类
+- `.pth` 安装，完全向后兼容
+
+### 关键发现
+
+- PA 坐标系：Y+ vs X+ 差 90°
+- PA 解缠：0°/180° 边界虚假跃变
+- PA 漂移检测：范围 > 45° 自动扩窗
+
+### 提交（共 12 commits）
 
 ```
-366cff4 重构: 拆分 my_tools.py 为功能模块，新增 PIPELINE.md
 2f71a9c 按管线阶段重组脚本目录结构
-d8d9e49 smooth_isotable: 新增 PA 系统性漂移检测
-1830965 修复 smooth_isotable PA 解缠
-9e1ad06 新增 smooth_isotable 等强度线平滑后处理
-a5a71ad 新增 moments_estimate 矩估计函数
-f84cc76 整合 moments_estimate 到 free_fitting_original
-05f2fc1 删除 free_fitting_original_2/3（已整合进主脚本）
-053cd11 清理废弃的 setup.py/pyproject.toml
-c129d4f 初始化 Python 包结构
+366cff4 拆分 my_tools.py 为功能模块
+d8d9e49 PA 系统性漂移检测
+1830965 PA 解缠修复
+9e1ad06 smooth_isotable 等强度线平滑
+a5a71ad moments_estimate 矩估计
+f84cc76 整合到 free_fitting_original
 ```
