@@ -84,7 +84,9 @@ def run_multi_flat(run_chunk, path_table, parms, bands=None, ncpu=120):
     # 展开星系×波段，每个 task 包含 row dict 方便读取其他参数
     all_tasks = []
     for row in tab:
-        label = str(row['survey'], encoding='utf-8')
+        # 兼容 bytes 和 str 类型
+        val = row['survey']
+        label = val.decode('utf-8') if isinstance(val, bytes) else str(val)
         index = row['index']
         row_dict = {col: row[col] for col in row.colnames}
         for clr in bands:
